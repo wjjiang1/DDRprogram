@@ -11,9 +11,9 @@ public class main {
     /** Most recently used foot. Possible values: -1 (if none), LEFT, RIGHT */
     static int lastUsed= -1;
     /** Current held foot. Possible values: -1 (if none), LEFT, RIGHT */
-    static int held= -1;
-    /** Map whose key is position of the held note and value is foot that holds the note */
-    static HashMap<Integer, Integer> heldPositions= new HashMap<>();
+    static int freezeFoot= -1;
+    /** Map whose key is position of the freeze note and value is foot that holds the note */
+    static HashMap<Integer, Integer> freezePositions= new HashMap<>();
     static int[][] translation;
 
     public static void main(String[] args) {
@@ -43,89 +43,141 @@ public class main {
         for (int i= 0; i < steps.size(); i++ ) {
             String s= steps.get(i);
             int numNotes= countNotes(s);
-            if (numNotes == 1) {
-                for (int j= 0; j < 4; j++ ) {
-                    translation[i][j]= heldPositions.getOrDefault(j, -1);
-                    if (s.charAt(j) == '1') {
-                        translation[i][j]= getFoot(j);
-                    }
-                    if (s.charAt(j) == '2') {
-                        int heldFoot= getFoot(j);
-                        translation[i][j]= heldFoot;
-                        held= heldFoot;
-                        heldPositions.put(j, heldFoot);
-                    }
-                    if (s.charAt(j) == '3') {
-                        heldPositions.remove(j);
-                    }
-                }
-            } else if (numNotes > 1) {
-                mapJump(s, i);
-            }
             if (numNotes == 0)
                 numRests++ ;
-            if (numNotes == 2 || numRests >= 2) {
+            if (numNotes == 1) {
+                mapStep(s, i);
+            } else if (numNotes == 2) {
+                mapJump(s, i);
                 lastUsed= -1;
                 numRests= 0;
             }
 
+            unfreeze(s);
+            if (numRests >= 2) {
+                lastUsed= -1;
+                numRests= 0;
+            }
+
+            /* DEBUGGING
+             * for (int n : translation[i]) {
+                String step= " ";
+                if (n == LEFT)
+                    step= "L";
+                if (n == RIGHT)
+                    step= "R";
+                System.out.print(step + " ");
+            }
+            System.out.println(freezePositions); */
         }
         System.out.println("← ↓ ↑ →");
         printTranslation(translation);
     }
 
+    public static void unfreeze(String row) {
+        for (int i= 0; i < 4; i++ ) {
+            if (row.charAt(i) == '3')
+                freezePositions.remove(i);
+        }
+    }
+
+    /** Maps a single note to its corresponding foot. */
+    public static void mapStep(String row, int line) {
+        for (int i= 0; i < 4; i++ ) {
+            translation[line][i]= freezePositions.getOrDefault(i, -1);
+            if (row.charAt(i) == '1') {
+                translation[line][i]= getFoot(i);
+            }
+            if (row.charAt(i) == '2') {
+                int heldFoot= getFoot(i);
+                translation[line][i]= heldFoot;
+                freezeFoot= heldFoot;
+                freezePositions.put(i, heldFoot);
+            }
+        }
+    }
+
+    /** Maps a two-note jump to its corresponding feet. */
     public static void mapJump(String row, int line) {
-        if (row.charAt(0) == '1') {
+        // TODO if jumps are freeze arrows
+        if (row.charAt(0) == '1' || row.charAt(0) == '2') {
             /* Maps the following jumps:
              * ← ↓
              * ←   ↑
              * ←     →
              */
+            if (row.charAt(0) == '2') {
+                freezeFoot= LEFT;
+                freezePositions.put(0, LEFT);
+            }
             translation[line][0]= LEFT;
-            translation[line][row.indexOf('1', 1)]= RIGHT;
-        } else if (row.charAt(3) == '1') {
+            if (row.indexOf('1', 1) != -1)
+                translation[line][row.indexOf('1', 1)]= RIGHT;
+            else {
+                translation[line][row.indexOf('2', 1)]= RIGHT;
+                freezeFoot= RIGHT;
+                freezePositions.put(row.indexOf('2', 1), RIGHT);
+            }
+        } else if (row.charAt(3) == '1' || row.charAt(3) == '2') {
             /* Maps the following jumps:
              *     ↑ →
              *   ↓   →
              */
+            if (row.charAt(3) == '2') {
+                freezeFoot= RIGHT;
+                freezePositions.put(3, RIGHT);
+            }
             translation[line][3]= RIGHT;
-            translation[line][row.indexOf('1', 0)]= LEFT;
+            String fstThree= row.substring(0, 3);
+            if (fstThree.contains("1"))
+                translation[line][fstThree.indexOf('1')]= LEFT;
+            else {
+                translation[line][fstThree.indexOf('2')]= LEFT;
+                freezeFoot= LEFT;
+                freezePositions.put(fstThree.indexOf('2'), LEFT);
+            }
         } else {
             // TODO map jump ↓ ↑ to R L or L R
+            if (row.charAt(1) == '2') {
+                freezeFoot= RIGHT;
+                freezePositions.put(1, RIGHT);
+            }
             translation[line][1]= RIGHT;
+            if (row.charAt(2) == '2') {
+                freezeFoot= LEFT;
+                freezePositions.put(2, LEFT);
+            }
             translation[line][2]= LEFT;
         }
     }
 
     /** Returns the corresponding foot that a note maps to. */
     public static int getFoot(int position) {
-        if (heldPositions.size() == 0) {
+        if (freezePositions.size() == 0) {
             switch (lastUsed) {
             case LEFT:
                 lastUsed= RIGHT;
-                return RIGHT;
+                break;
             case RIGHT:
                 lastUsed= LEFT;
-                return LEFT;
+                break;
             case -1:
                 if (position == 3)
                     lastUsed= RIGHT;
                 else
                     lastUsed= LEFT;
-                return lastUsed;
             }
         } else {
-            lastUsed= held == LEFT ? RIGHT : LEFT;
-            return lastUsed;
+            lastUsed= freezeFoot == LEFT ? RIGHT : LEFT;
         }
-        return -1;
+        return lastUsed;
     }
 
     /** Counts number of notes in a given beat. */
     public static int countNotes(String s) {
         int count= 0;
         for (int i= 0; i < 4; i++ ) {
-            if (s.charAt(i) == '1')
+            if (s.charAt(i) == '1' || s.charAt(i) == '2')
                 count++ ;
         }
         return count;
